@@ -51,7 +51,7 @@ _TIMEOUT_POLL_SECONDS = 5 * 60          # check every 5 minutes
 _TIMEOUT_MINUTES = 30                   # sessions idle this long get closed
 _COOLDOWN_HOURS = 4                     # minimum gap between sessions
 _TIMEOUT_CLOSE_MESSAGE = (
-    "It was so lovely talking with you, Mom. "
+    "It was so lovely talking with you, {grandma_name}. "
     "Let's chat again soon! 💛"
 )
 
@@ -113,16 +113,18 @@ async def _close_timed_out_session(session: dict) -> None:
         grandma_name,
     )
 
+    close_message = _TIMEOUT_CLOSE_MESSAGE.format(grandma_name=grandma_name)
+
     # Send the gentle goodbye
     try:
-        await bb.send_text(grandma_phone, _TIMEOUT_CLOSE_MESSAGE)
+        await bb.send_text(grandma_phone, close_message)
     except Exception as exc:
         logger.error("[scheduler] send_text for timeout close failed: %s", exc)
 
     # Save the bot's goodbye turn
     try:
         await asyncio.to_thread(
-            db.add_turn, session_id, "bot", _TIMEOUT_CLOSE_MESSAGE
+            db.add_turn, session_id, "bot", close_message
         )
     except Exception as exc:
         logger.error("[scheduler] add_turn for timeout close failed: %s", exc)

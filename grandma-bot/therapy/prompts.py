@@ -200,7 +200,7 @@ LOW_SIGNAL_REENGAGES: dict[SessionPhase, list[str]] = {
 # ---------------------------------------------------------------------------
 
 VOICE_MEMO_REDIRECT = (
-    "I love hearing from you, Mom! I can't listen to voice messages yet, "
+    "I love hearing from you, {grandma_name}! I can't listen to voice messages yet, "
     "but I'd love to hear what you wanted to say — could you type it out for me? 💛"
 )
 
@@ -215,15 +215,15 @@ VIDEO_REDIRECT = (
 # ---------------------------------------------------------------------------
 
 SAFETY_RESPONSES = [
-    "We can look at this together whenever you're ready, Mom. "
-    "I love you and I'm always here. 💛",
+    "We can look at this together whenever you're ready, {grandma_name}. "
+    "I'm always here. 💛",
 
     "That's okay — no rush at all. Let's just rest for now. "
-    "I love you so much. 💛",
+    "I'm here whenever you feel like chatting. 💛",
 
-    "Of course, sweetheart. We don't have to look at anything right now. "
+    "Of course, {grandma_name}. We don't have to look at anything right now. "
     "I'm right here with you. 💛",
 
-    "It's all right. Whenever you feel like chatting, I'm here. "
-    "Sending you so much love today. 💛",
+    "It's all right, {grandma_name}. Whenever you feel like chatting, I'm here. "
+    "Take care of yourself today. 💛",
 ]

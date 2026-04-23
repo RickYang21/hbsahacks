@@ -47,7 +47,7 @@ from .state_machine import (
 
 logger = logging.getLogger(__name__)
 
-_FALLBACK_REPLY = "I'll talk to you soon, Mom 💛"
+_FALLBACK_REPLY = "I'll talk to you soon, {grandma_name} 💛"
 _SESSION_COOLDOWN_HOURS = 4
 
 # Per-phone lock — serializes concurrent webhook handling for the same grandma.
@@ -168,9 +168,9 @@ def _cooldown_ok(grandma_id: str) -> bool:
         return True
 
 
-async def _send_fallback(phone: str) -> None:
+async def _send_fallback(phone: str, grandma_name: str = "there") -> None:
     try:
-        await bb.send_text(phone, _FALLBACK_REPLY)
+        await bb.send_text(phone, _FALLBACK_REPLY.format(grandma_name=grandma_name))
     except Exception as exc:
         logger.error("[handler] fallback send failed: %s", exc)
 
@@ -280,7 +280,7 @@ async def _handle_grandma_message_locked(
     if attachment == "voice":
         logger.info("[handler] Voice memo from %s — sending redirect", phone)
         try:
-            await bb.send_text(grandma_phone, VOICE_MEMO_REDIRECT)
+            await bb.send_text(grandma_phone, VOICE_MEMO_REDIRECT.format(grandma_name=grandma_name))
         except Exception as exc:
             logger.error("[handler] voice redirect send failed: %s", exc)
         return
@@ -331,7 +331,7 @@ async def _handle_grandma_message_locked(
         )
     except Exception as exc:
         logger.error("[handler] DB reads failed: %s", exc)
-        await _send_fallback(grandma_phone)
+        await _send_fallback(grandma_phone, grandma_name)
         return
 
     state = _reconstruct_state(session, turns)
@@ -405,7 +405,7 @@ async def _handle_grandma_message_locked(
         )
     except Exception as exc:
         logger.error("[handler] generate_therapy_response failed: %s", exc)
-        reply = _FALLBACK_REPLY
+        reply = _FALLBACK_REPLY.format(grandma_name=grandma_name)
 
     # ── j. Send reply via BlueBubbles ─────────────────────────────────────
     try:

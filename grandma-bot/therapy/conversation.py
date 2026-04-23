@@ -273,10 +273,10 @@ async def generate_opener(
     return opener
 
 
-def generate_safety_response(grandma_name: str) -> str:  # noqa: ARG001 — reserved for future personalisation
+def generate_safety_response(grandma_name: str) -> str:
     """Return a pre-written, non-clinical redirect for distress situations.
 
     Deliberately synchronous and never calls Claude — safety responses must
     be instantaneous and 100 % reliable.
     """
-    return random.choice(SAFETY_RESPONSES)
+    return random.choice(SAFETY_RESPONSES).format(grandma_name=grandma_name)
