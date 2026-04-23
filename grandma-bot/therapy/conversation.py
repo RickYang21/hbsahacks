@@ -102,26 +102,46 @@ def _build_system_prompt(
     )
 
 
-def _build_transcript(
+def _build_messages(
     grandma_name: str,
     session_turns: list[dict],
     last_grandma_message: str,
-) -> str:
-    """Format prior turns as a readable transcript ending with grandma's latest message."""
-    lines: list[str] = []
+) -> list[dict]:
+    """Build a proper multi-turn messages list for the Claude API.
+
+    Bot turns → role "assistant". Grandma turns → role "user".
+    The Claude API requires alternating user/assistant, so consecutive same-role
+    turns are merged with a newline.
+    """
+    raw: list[dict] = []
     for turn in session_turns:
         role = turn.get("role", "")
         content = (turn.get("content") or "").strip()
         if not content:
             continue
-        speaker = "You" if role == "bot" else grandma_name
-        lines.append(f"{speaker}: {content}")
+        api_role = "assistant" if role == "bot" else "user"
+        raw.append({"role": api_role, "content": content})
 
-    # Append the current inbound message (may not be in DB yet).
+    # Append the live inbound message (not yet in DB).
     if last_grandma_message.strip():
-        lines.append(f"{grandma_name}: {last_grandma_message.strip()}")
+        raw.append({"role": "user", "content": last_grandma_message.strip()})
 
-    return "\n".join(lines)
+    if not raw:
+        return [{"role": "user", "content": f"{grandma_name} is looking at the photo."}]
+
+    # Merge consecutive same-role turns (API requires strict alternation).
+    merged: list[dict] = []
+    for msg in raw:
+        if merged and merged[-1]["role"] == msg["role"]:
+            merged[-1]["content"] += "\n" + msg["content"]
+        else:
+            merged.append({"role": msg["role"], "content": msg["content"]})
+
+    # Claude API requires the last message to be from the user.
+    if merged[-1]["role"] == "assistant":
+        merged.append({"role": "user", "content": "(Please continue.)"})
+
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -135,14 +155,14 @@ def _build_transcript(
     wait=wait_exponential(multiplier=1, min=1, max=10),
     reraise=True,
 )
-async def _call_claude(system: str, user: str) -> str:
-    """Make a single Claude API call and return the text response."""
+async def _call_claude(system: str, messages: list[dict]) -> str:
+    """Make a Claude API call with a proper multi-turn messages list."""
     response = await _get_client().messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
         temperature=TEMPERATURE,
         system=system,
-        messages=[{"role": "user", "content": user}],
+        messages=messages,
     )
     return "".join(
         block.text for block in response.content if hasattr(block, "text")
@@ -177,18 +197,16 @@ async def generate_therapy_response(
         The bot's next message, ready to send over iMessage.
     """
     system_prompt = _build_system_prompt(grandma_name, memory, profile_facts, current_phase)
-    transcript = _build_transcript(grandma_name, session_turns, last_grandma_message)
+    messages = _build_messages(grandma_name, session_turns, last_grandma_message)
 
     logger.debug(
-        "[conversation] generate_therapy_response | phase=%s\n"
-        "--- SYSTEM ---\n%s\n--- USER ---\n%s",
+        "[conversation] generate_therapy_response | phase=%s turns=%d",
         current_phase.value,
-        system_prompt,
-        transcript,
+        len(messages),
     )
 
     try:
-        reply = await _call_claude(system_prompt, transcript)
+        reply = await _call_claude(system_prompt, messages)
     except Exception as exc:
         logger.error("[conversation] Claude API failed after retries: %s", exc)
         # Graceful fallback — generic warm continuation.
@@ -237,7 +255,7 @@ async def generate_opener(
         "Use loving, everyday language. One emoji is okay. "
         "No narration, no labels — just the message itself."
     )
-    user = (
+    user_content = (
         f"Photo description: {memory_summary}\n"
         f"Tags: {_format_tags(memory.get('ai_tags'))}\n"
         f"People: {_format_tags(memory.get('people_mentioned'))}"
@@ -245,7 +263,7 @@ async def generate_opener(
 
     logger.debug("[conversation] generating novel opener via Claude")
     try:
-        opener = await _call_claude(system, user)
+        opener = await _call_claude(system, [{"role": "user", "content": user_content}])
     except Exception as exc:
         logger.error("[conversation] novel opener failed, falling back to template: %s", exc)
         template = random.choice(OPENER_TEMPLATES)
