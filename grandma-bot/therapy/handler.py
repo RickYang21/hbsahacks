@@ -296,19 +296,13 @@ async def _handle_grandma_message_locked(
     # We do NOT skip the message — grandma may have typed context around the link.
     clean_content = _URL_RE.sub("", content).strip() or content
 
-    # ── d. Save inbound grandma turn ──────────────────────────────────────
-    try:
-        await asyncio.to_thread(db.add_turn, session_id, "grandma", clean_content, image_url)
-    except Exception as exc:
-        # Non-fatal — still try to respond
-        logger.error("[handler] add_turn (grandma) failed: %s", exc)
-
     # ── e. Immediate distress/confusion check ─────────────────────────────
     if detect_distress(clean_content):
         logger.info("[handler] Distress detected — safety exit for session %s", session_id)
         safety_reply = generate_safety_response(grandma_name)
         try:
             await bb.send_text(grandma_phone, safety_reply)
+            await asyncio.to_thread(db.add_turn, session_id, "grandma", clean_content, image_url)
             await asyncio.to_thread(db.add_turn, session_id, "bot", safety_reply)
             await asyncio.to_thread(db.flag_session, session_id)
         except Exception as exc:
@@ -322,7 +316,11 @@ async def _handle_grandma_message_locked(
         asyncio.create_task(_notify_family(grandma_id, grandma_name))
         return
 
-    # ── f. Load turns + profile facts + past turns, reconstruct state ────
+    # ── f. Load turns + profile facts + past turns BEFORE saving this turn ─
+    # Loading first ensures the current grandma message is not included in
+    # session_turns — it is passed separately as last_grandma_message to
+    # generate_therapy_response, preventing it from appearing twice in the
+    # Claude context (which caused repeated replies).
     try:
         turns, profile_facts, past_grandma_turns = await asyncio.gather(
             asyncio.to_thread(db.get_session_turns, session_id),
@@ -334,7 +332,16 @@ async def _handle_grandma_message_locked(
         await _send_fallback(grandma_phone, grandma_name)
         return
 
+    # Reconstruct state from prior turns, then advance it for the current message.
     state = _reconstruct_state(session, turns)
+    advance_state(state, clean_content)
+
+    # ── d. Save inbound grandma turn (after loading, so it stays out of turns) ─
+    try:
+        await asyncio.to_thread(db.add_turn, session_id, "grandma", clean_content, image_url)
+    except Exception as exc:
+        logger.error("[handler] add_turn (grandma) failed: %s", exc)
+
     existing_fact_strings = [f["fact"] for f in profile_facts]
 
     # ── g. Force-close check (timeout / max turns) ────────────────────────
@@ -408,6 +415,15 @@ async def _handle_grandma_message_locked(
         reply = _FALLBACK_REPLY.format(grandma_name=grandma_name)
 
     # ── j. Send reply via BlueBubbles ─────────────────────────────────────
+    # Guard: never send the exact same text as the last bot turn (catches any
+    # remaining echo-loop edge cases after the other dedup layers).
+    last_bot_content = next(
+        (t.get("content", "") for t in reversed(turns) if t.get("role") == "bot"),
+        None,
+    )
+    if reply == last_bot_content:
+        logger.warning("[handler] Generated reply is identical to previous bot turn — skipping")
+        return
     try:
         await bb.send_text(grandma_phone, reply)
     except Exception as exc:
