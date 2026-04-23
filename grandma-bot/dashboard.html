@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Eleanor's Memory Bot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .pulse-dot { width: 8px; height: 8px; border-radius: 9999px; background: #22c55e; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); animation: pulse 2s infinite; }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
+      70% { box-shadow: 0 0 0 10px rgba(34,197,94,0); }
+      100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+    }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen">
+  <div class="max-w-7xl mx-auto p-6">
+    <header class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-3xl font-semibold tracking-tight">Eleanor's Memory Bot</h1>
+        <p class="text-sm text-zinc-400 mt-1">Family photos → warm conversations.</p>
+      </div>
+      <div class="flex items-center gap-3 text-sm text-zinc-400">
+        <span class="pulse-dot"></span>
+        <span id="memory-count">0 memories</span>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <section class="lg:col-span-2">
+        <h2 class="text-xs uppercase tracking-widest text-zinc-500 mb-3">Memories</h2>
+        <div id="memories" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+        <div id="memories-empty" class="hidden text-zinc-500 text-sm p-8 border border-zinc-800 rounded-lg text-center">
+          No memories yet. Text the bot a photo.
+        </div>
+      </section>
+
+      <aside class="space-y-6">
+        <div>
+          <h2 class="text-xs uppercase tracking-widest text-zinc-500 mb-3">What we've learned about Eleanor</h2>
+          <ul id="facts" class="space-y-2"></ul>
+          <div id="facts-empty" class="hidden text-zinc-500 text-sm p-4 border border-zinc-800 rounded-lg">
+            Nothing yet — facts appear as Eleanor talks with the bot.
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-xs uppercase tracking-widest text-zinc-500 mb-3">Current session</h2>
+          <div id="session" class="space-y-2"></div>
+          <div id="session-empty" class="hidden text-zinc-500 text-sm p-4 border border-zinc-800 rounded-lg">
+            No active session.
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+<script>
+const GRANDMA_ID = "11111111-1111-1111-1111-111111111111";
+
+function el(html) {
+  const t = document.createElement("template");
+  t.innerHTML = html.trim();
+  return t.content.firstChild;
+}
+
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;").replaceAll("'","&#39;");
+}
+
+function tagChip(t) {
+  return `<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-800 text-zinc-300">${escapeHtml(t)}</span>`;
+}
+
+function memoryCard(m) {
+  const tags = Array.isArray(m.ai_tags) ? m.ai_tags.slice(0, 5) : [];
+  const img = m.image_url
+    ? `<img src="${escapeHtml(m.image_url)}" onerror="this.style.display='none'" class="w-full h-48 object-cover rounded-t-lg bg-zinc-900" />`
+    : `<div class="w-full h-48 rounded-t-lg bg-zinc-900"></div>`;
+  return el(`
+    <div class="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden flex flex-col">
+      ${img}
+      <div class="p-3 flex flex-col gap-2 flex-1">
+        <div class="text-sm text-zinc-100 leading-snug">${escapeHtml(m.ai_summary || m.original_caption || "")}</div>
+        <div class="flex flex-wrap gap-1">${tags.map(tagChip).join("")}</div>
+        <div class="flex items-center justify-between mt-auto pt-2">
+          <span class="text-xs text-zinc-500">${escapeHtml(m.era || "")}</span>
+          <button data-memory-id="${escapeHtml(m.id)}" class="start-session-btn text-xs px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white font-medium">Start Session</button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+async function startSession(memoryId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "Starting…"; }
+  try {
+    const r = await fetch(`/api/session/start/${memoryId}`, { method: "POST" });
+    if (!r.ok) throw new Error(await r.text());
+    if (btn) btn.textContent = "Sent 💌";
+  } catch (e) {
+    console.error(e);
+    if (btn) { btn.disabled = false; btn.textContent = "Retry"; }
+  }
+}
+
+function factItem(f) {
+  return el(`
+    <li class="p-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-200">
+      ${escapeHtml(f.fact || "")}
+      <div class="text-xs text-zinc-500 mt-1">${new Date(f.created_at).toLocaleString()}</div>
+    </li>
+  `);
+}
+
+function turnBubble(t) {
+  const isBot = t.role === "bot";
+  const base = isBot
+    ? "bg-blue-950/60 border border-blue-900/60 text-blue-100"
+    : "bg-zinc-900 border border-zinc-800 text-zinc-100";
+  const align = isBot ? "ml-0 mr-8" : "ml-8 mr-0";
+  const label = isBot ? "bot" : (t.role || "grandma");
+  const img = t.image_url
+    ? `<img src="${escapeHtml(t.image_url)}" onerror="this.style.display='none'" class="mt-2 w-full rounded-md" />`
+    : "";
+  return el(`
+    <div class="${align} ${base} rounded-lg px-3 py-2 text-sm">
+      <div class="text-[10px] uppercase tracking-widest opacity-60 mb-1">${escapeHtml(label)}</div>
+      <div>${escapeHtml(t.content || "")}</div>
+      ${img}
+    </div>
+  `);
+}
+
+function replaceChildren(container, nodes) {
+  container.innerHTML = "";
+  for (const n of nodes) container.appendChild(n);
+}
+
+async function tick() {
+  try {
+    const [mRes, fRes, sRes] = await Promise.all([
+      fetch("/api/memories"),
+      fetch(`/api/profile/${GRANDMA_ID}`),
+      fetch("/api/sessions/active"),
+    ]);
+    const [memories, facts, session] = await Promise.all([mRes.json(), fRes.json(), sRes.json()]);
+
+    const memEl = document.getElementById("memories");
+    const memEmpty = document.getElementById("memories-empty");
+    document.getElementById("memory-count").textContent = `${memories.length} memor${memories.length === 1 ? "y" : "ies"}`;
+    if (!memories.length) {
+      memEl.innerHTML = "";
+      memEmpty.classList.remove("hidden");
+    } else {
+      memEmpty.classList.add("hidden");
+      replaceChildren(memEl, memories.map(memoryCard));
+      memEl.querySelectorAll(".start-session-btn").forEach((btn) => {
+        btn.addEventListener("click", (ev) => startSession(btn.dataset.memoryId, btn));
+      });
+    }
+
+    const factEl = document.getElementById("facts");
+    const factEmpty = document.getElementById("facts-empty");
+    if (!facts.length) {
+      factEl.innerHTML = "";
+      factEmpty.classList.remove("hidden");
+    } else {
+      factEmpty.classList.add("hidden");
+      replaceChildren(factEl, facts.map(factItem));
+    }
+
+    const sessEl = document.getElementById("session");
+    const sessEmpty = document.getElementById("session-empty");
+    if (!session) {
+      sessEl.innerHTML = "";
+      sessEmpty.classList.remove("hidden");
+    } else {
+      sessEmpty.classList.add("hidden");
+      const turns = session.turns || [];
+      replaceChildren(sessEl, turns.map(turnBubble));
+    }
+  } catch (e) {
+    console.error("tick failed", e);
+  }
+}
+
+tick();
+setInterval(tick, 2000);
+</script>
+</body>
+</html>
