@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import Optional
 
 import httpx
@@ -36,7 +37,8 @@ class BlueBubblesClient:
     def __init__(self, base_url: str | None = None, password: str | None = None) -> None:
         self._base = (base_url or settings.bluebubbles_url).rstrip("/")
         self._password = password if password is not None else settings.bluebubbles_password
-        self._client = httpx.AsyncClient(timeout=_TIMEOUT)
+        # http2=False: BlueBubbles doesn't support HTTP/2; h2 installed via supabase deps.
+        self._client = httpx.AsyncClient(timeout=_TIMEOUT, http2=False)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -58,7 +60,7 @@ class BlueBubblesClient:
         return await self._client.post(
             f"{self._base}/api/v1/message/text",
             params=self._params(),
-            json={"chatGuid": chat_guid, "message": message, "method": method},
+            json={"chatGuid": chat_guid, "message": message, "method": method, "tempGuid": f"temp-{uuid.uuid4()}"},
         )
 
     # ------------------------------------------------------------------
@@ -66,12 +68,12 @@ class BlueBubblesClient:
     # ------------------------------------------------------------------
 
     async def send_text(self, phone: str, message: str) -> dict:
-        """Send a text iMessage. Falls back from private-api to apple-script."""
+        """Send a text iMessage. Uses apple-script (private-api not required)."""
         chat_guid = self._chat_guid(phone)
         try:
-            r = await self._post_text(chat_guid, message, "private-api")
+            r = await self._post_text(chat_guid, message, "apple-script")
             if r.status_code >= 400:
-                r = await self._post_text(chat_guid, message, "apple-script")
+                r = await self._post_text(chat_guid, message, "private-api")
             r.raise_for_status()
             return r.json()
         except Exception as exc:

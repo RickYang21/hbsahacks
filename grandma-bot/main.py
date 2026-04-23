@@ -55,6 +55,24 @@ app.add_middleware(
 # NOTE: in-memory dict keyed by sender phone — fine for hackathon, lost on restart.
 _pending_text: dict[str, tuple[str, float]] = {}
 
+# ---------- seen-GUID dedup cache ----------
+# NOTE: BlueBubbles fires webhooks for outbound messages too (isFromMe sometimes wrong).
+# Cache processed GUIDs for 5 min to break the send→webhook→send loop.
+_seen_guids: dict[str, float] = {}
+_GUID_TTL = 300.0
+
+
+def _is_duplicate(guid: str) -> bool:
+    now = time.time()
+    # Evict expired entries.
+    expired = [g for g, ts in _seen_guids.items() if now - ts > _GUID_TTL]
+    for g in expired:
+        del _seen_guids[g]
+    if guid in _seen_guids:
+        return True
+    _seen_guids[guid] = now
+    return False
+
 
 def _stash_text(phone: str, text: str) -> None:
     _pending_text[phone] = (text, time.time())
@@ -203,19 +221,55 @@ def handle_family(family: dict, msg: Inbound) -> dict:
 
 async def handle_grandma(grandma: dict, msg: Inbound) -> dict:
     """Route inbound grandma message to the therapy conversation engine."""
+    content = (msg.text or "").strip()
+    if not content:
+        return {"status": "ignored_empty", "grandma_id": grandma["id"]}
     from therapy.handler import handle_grandma_message
     await handle_grandma_message(
         phone=grandma["phone"],
-        content=msg.text or "",
+        content=content,
         image_url=None,  # grandma-side attachments not expected; extend here if needed
     )
     return {"status": "handled", "grandma_id": grandma["id"]}
+
+
+def _memory_question(memory: dict) -> str:
+    """Pick a warm, specific opening question based on what Claude extracted."""
+    tags: list = memory.get("ai_tags") or []
+    people: list = memory.get("people_mentioned") or []
+    emotions: list = memory.get("emotion_hints") or []
+    caption = (memory.get("original_caption") or "").lower()
+    summary = (memory.get("ai_summary") or "").lower()
+
+    _backyard_keywords = ("backyard", "back yard", "garden", "yard", "your garden", "your flowers")
+    if any(kw in caption for kw in _backyard_keywords):
+        return "Do you remember what color your favorite flower was?"
+
+    if people:
+        name = people[0]
+        return f"Do you remember being with {name} here? What was that day like? 🌸"
+    if any(t in tags for t in ("garden", "flowers", "rose", "nature", "plants")):
+        return "Do you remember this place? What were your favorite flowers to grow? 🌷"
+    if any(t in tags for t in ("family", "holiday", "christmas", "birthday", "celebration")):
+        return "Do you remember this gathering? What do you recall about that day? 🥰"
+    if any(t in tags for t in ("travel", "trip", "vacation", "beach", "mountain")):
+        return "Do you remember this trip? Where were you, and who were you with? ✈️"
+    if "pride" in emotions or "achievement" in emotions or "graduation" in (t.lower() for t in tags):
+        return "Do you remember this moment? How did you feel that day? 🌟"
+    if any(t in tags for t in ("food", "cooking", "kitchen", "baking")):
+        return "Do you remember making this? What was your favorite recipe back then? 🍰"
+    # Generic fallback.
+    return "Does this bring back any memories for you? I'd love to hear what you remember. 💛"
 
 
 # ---------- routes ----------
 @app.post("/webhook/bluebubbles")
 async def bluebubbles_webhook(request: Request):
     payload = await request.json()
+    # Dedup by message GUID before any other processing.
+    raw_guid = (payload.get("data") or {}).get("guid") or ""
+    if raw_guid and _is_duplicate(raw_guid):
+        return {"status": "duplicate"}
     msg = parse_inbound(payload)
     if msg is None:
         return {"status": "ignored"}
@@ -234,49 +288,61 @@ async def bluebubbles_webhook(request: Request):
 
 @app.get("/api/memories")
 def api_memories():
-    r = (
-        supabase.table("memories")
-        .select("*")
-        .order("created_at", desc=True)
-        .execute()
-    )
-    return r.data or []
+    try:
+        r = (
+            supabase.table("memories")
+            .select("*")
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return r.data or []
+    except Exception as e:
+        print(f"[api/memories] DB error: {e}")
+        return []
 
 
 @app.get("/api/profile/{grandma_id}")
 def api_profile(grandma_id: str):
-    r = (
-        supabase.table("grandma_profile_facts")
-        .select("*")
-        .eq("grandma_id", grandma_id)
-        .order("created_at", desc=True)
-        .execute()
-    )
-    return r.data or []
+    try:
+        r = (
+            supabase.table("grandma_profile_facts")
+            .select("*")
+            .eq("grandma_id", grandma_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return r.data or []
+    except Exception as e:
+        print(f"[api/profile] DB error: {e}")
+        return []
 
 
 @app.get("/api/sessions/active")
 def api_active_session():
-    r = (
-        supabase.table("sessions")
-        .select("*, memories(*)")
-        .eq("status", "active")
-        .order("started_at", desc=True)
-        .limit(1)
-        .execute()
-    )
-    if not r.data:
+    try:
+        r = (
+            supabase.table("sessions")
+            .select("*, memories(*)")
+            .eq("status", "active")
+            .order("started_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not r.data:
+            return JSONResponse(content=None)
+        session = r.data[0]
+        turns = (
+            supabase.table("turns")
+            .select("*")
+            .eq("session_id", session["id"])
+            .order("created_at", desc=True)
+            .execute()
+        )
+        session["turns"] = list(reversed(turns.data or []))
+        return session
+    except Exception as e:
+        print(f"[api/sessions/active] DB error: {e}")
         return JSONResponse(content=None)
-    session = r.data[0]
-    turns = (
-        supabase.table("turns")
-        .select("*")
-        .eq("session_id", session["id"])
-        .order("created_at", desc=True)
-        .execute()
-    )
-    session["turns"] = list(reversed(turns.data or []))
-    return session
 
 
 @app.post("/api/session/start/{memory_id}")
@@ -308,7 +374,15 @@ def api_session_start(memory_id: str):
         if fam.data and fam.data[0].get("name"):
             submitter_name = fam.data[0]["name"]
 
-    opener = f"Hi Mom 💐 Look what {submitter_name} sent me today… does this look familiar?"
+    # Build a memory-specific opening question from the ai_summary / era.
+    summary = memory.get("ai_summary") or ""
+    era = memory.get("era") or ""
+    era_hint = f" from the {era}" if era and era != "unknown" else ""
+    question = _memory_question(memory)
+    opener = (
+        f"{submitter_name} just shared a photo with me{era_hint}. "
+        f"{question}"
+    )
 
     sess_r = (
         supabase.table("sessions")
@@ -323,11 +397,10 @@ def api_session_start(memory_id: str):
     )
     session = sess_r.data[0]
 
-    # Send photo + opener to grandma via iMessage.
+    # Text first so it always arrives fast; image follows (may take longer).
+    bluebubbles.send_text(grandma["phone"], opener)
     if memory.get("image_url"):
-        bluebubbles.send_image(grandma["phone"], memory["image_url"], caption=opener)
-    else:
-        bluebubbles.send_text(grandma["phone"], opener)
+        bluebubbles.send_image(grandma["phone"], memory["image_url"])
 
     supabase.table("turns").insert(
         {

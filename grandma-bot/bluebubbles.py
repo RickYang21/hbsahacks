@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -12,7 +13,9 @@ BLUEBUBBLES_URL = os.getenv("BLUEBUBBLES_URL", "http://localhost:1234").rstrip("
 BLUEBUBBLES_PASSWORD = os.getenv("BLUEBUBBLES_PASSWORD", "")
 
 # NOTE: shared sync client — fine for hackathon traffic volumes.
-_client = httpx.Client(timeout=30.0)
+# http2=False: BlueBubbles doesn't support HTTP/2; h2 is installed via supabase deps.
+_client = httpx.Client(timeout=30.0, http2=False)
+_image_client = httpx.Client(timeout=120.0, http2=False)
 
 
 class Inbound(BaseModel):
@@ -83,17 +86,20 @@ def _send_text_with_method(chat_guid: str, message: str, method: str) -> httpx.R
     return _client.post(
         url,
         params={"password": BLUEBUBBLES_PASSWORD},
-        json={"chatGuid": chat_guid, "message": message, "method": method},
-    )
+        json={"chatGuid": chat_guid, "message": message, "method": method, "tempGuid": f"temp-{uuid.uuid4()}"},
+ )
 
 
 def send_text(phone: str, text: str) -> None:
-    """Send an iMessage text. Falls back from private-api to apple-script."""
+    """Send an iMessage text. Uses apple-script (private-api not required)."""
     chat_guid = chat_guid_for(phone)
     try:
-        r = _send_text_with_method(chat_guid, text, "private-api")
+        r = _send_text_with_method(chat_guid, text, "apple-script")
         if r.status_code >= 400:
-            r = _send_text_with_method(chat_guid, text, "apple-script")
+            print(f"[bluebubbles] send_text apple-script {r.status_code}: {r.text}")
+            r = _send_text_with_method(chat_guid, text, "private-api")
+        if r.status_code >= 400:
+            print(f"[bluebubbles] send_text private-api {r.status_code}: {r.text}")
         r.raise_for_status()
     except Exception as e:
         print(f"[bluebubbles] send_text failed to {phone}: {e}")
@@ -106,7 +112,7 @@ def send_image(phone: str, image_url_or_path: str, caption: Optional[str] = None
 
     try:
         if image_url_or_path.startswith("http://") or image_url_or_path.startswith("https://"):
-            img_bytes = _client.get(image_url_or_path).content
+            img_bytes = _image_client.get(image_url_or_path).content
             name = image_url_or_path.rsplit("/", 1)[-1].split("?")[0] or "memory.jpg"
         else:
             p = Path(image_url_or_path)
@@ -114,14 +120,20 @@ def send_image(phone: str, image_url_or_path: str, caption: Optional[str] = None
             name = p.name
 
         files = {"attachment": (name, img_bytes, "image/jpeg")}
-        data = {"chatGuid": chat_guid, "name": name, "method": "private-api"}
+        data = {
+            "chatGuid": chat_guid,
+            "name": name,
+            "method": "apple-script",
+            "tempGuid": f"temp-{uuid.uuid4()}",
+        }
         if caption:
             data["message"] = caption
 
-        r = _client.post(url, params={"password": BLUEBUBBLES_PASSWORD}, data=data, files=files)
+        r = _image_client.post(url, params={"password": BLUEBUBBLES_PASSWORD}, data=data, files=files)
         if r.status_code >= 400:
-            data["method"] = "apple-script"
-            r = _client.post(url, params={"password": BLUEBUBBLES_PASSWORD}, data=data, files=files)
+            data["method"] = "private-api"
+            data["tempGuid"] = f"temp-{uuid.uuid4()}"
+            r = _image_client.post(url, params={"password": BLUEBUBBLES_PASSWORD}, data=data, files=files)
         r.raise_for_status()
 
         if caption:
