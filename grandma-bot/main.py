@@ -55,16 +55,14 @@ app.add_middleware(
 # NOTE: in-memory dict keyed by sender phone — fine for hackathon, lost on restart.
 _pending_text: dict[str, tuple[str, float]] = {}
 
-# ---------- seen-GUID dedup cache ----------
-# NOTE: BlueBubbles fires webhooks for outbound messages too (isFromMe sometimes wrong).
-# Cache processed GUIDs for 5 min to break the send→webhook→send loop.
+# ---------- seen-GUID dedup ----------
+# BlueBubbles fires webhooks for outbound messages too (isFromMe sometimes wrong).
 _seen_guids: dict[str, float] = {}
 _GUID_TTL = 300.0
 
 
 def _is_duplicate(guid: str) -> bool:
     now = time.time()
-    # Evict expired entries.
     expired = [g for g, ts in _seen_guids.items() if now - ts > _GUID_TTL]
     for g in expired:
         del _seen_guids[g]
@@ -266,13 +264,20 @@ def _memory_question(memory: dict) -> str:
 @app.post("/webhook/bluebubbles")
 async def bluebubbles_webhook(request: Request):
     payload = await request.json()
-    # Dedup by message GUID before any other processing.
-    raw_guid = (payload.get("data") or {}).get("guid") or ""
+    data = payload.get("data") or {}
+    # Drop outbound messages (isFromMe should catch this, but double-check).
+    if data.get("isFromMe"):
+        return {"status": "ignored_outbound"}
+    # Dedup by GUID.
+    raw_guid = data.get("guid") or ""
     if raw_guid and _is_duplicate(raw_guid):
         return {"status": "duplicate"}
     msg = parse_inbound(payload)
     if msg is None:
         return {"status": "ignored"}
+    # Drop echoes of messages the bot just sent.
+    if bluebubbles.is_bot_echo(msg.text):
+        return {"status": "ignored_echo"}
 
     family = _lookup_family(msg.from_phone)
     if family:

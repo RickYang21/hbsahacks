@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -16,6 +17,21 @@ BLUEBUBBLES_PASSWORD = os.getenv("BLUEBUBBLES_PASSWORD", "")
 # http2=False: BlueBubbles doesn't support HTTP/2; h2 is installed via supabase deps.
 _client = httpx.Client(timeout=30.0, http2=False)
 _image_client = httpx.Client(timeout=120.0, http2=False)
+
+# Outbound echo registry — auto-populated by send_text so webhook can ignore echoes.
+_sent_texts: dict[str, float] = {}
+_SENT_TTL = 300.0
+
+
+def is_bot_echo(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    key = text.strip()
+    now = time.time()
+    expired = [k for k, t in list(_sent_texts.items()) if now - t > _SENT_TTL]
+    for k in expired:
+        _sent_texts.pop(k, None)
+    return key in _sent_texts
 
 
 class Inbound(BaseModel):
@@ -92,6 +108,7 @@ def _send_text_with_method(chat_guid: str, message: str, method: str) -> httpx.R
 
 def send_text(phone: str, text: str) -> None:
     """Send an iMessage text. Uses apple-script (private-api not required)."""
+    _sent_texts[text.strip()] = time.time()  # register before sending
     chat_guid = chat_guid_for(phone)
     try:
         r = _send_text_with_method(chat_guid, text, "apple-script")
