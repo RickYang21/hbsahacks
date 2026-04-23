@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from typing import Optional
 
@@ -12,6 +13,8 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+
+import bluebubbles as _root_bb  # root client — used to share the echo-dedup registry
 
 from .config import settings
 
@@ -69,6 +72,7 @@ class BlueBubblesClient:
 
     async def send_text(self, phone: str, message: str) -> dict:
         """Send a text iMessage. Uses apple-script (private-api not required)."""
+        _root_bb._sent_texts[message.strip()] = time.time()  # register before sending so echo-dedup catches it
         chat_guid = self._chat_guid(phone)
         try:
             r = await self._post_text(chat_guid, message, "apple-script")

@@ -14,6 +14,7 @@ import asyncio
 import logging
 import random
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from pathlib import PurePosixPath
@@ -48,6 +49,13 @@ logger = logging.getLogger(__name__)
 
 _FALLBACK_REPLY = "I'll talk to you soon, Mom 💛"
 _SESSION_COOLDOWN_HOURS = 4
+
+# Per-phone lock — serializes concurrent webhook handling for the same grandma.
+_grandma_locks: dict[str, asyncio.Lock] = {}
+
+# Cooldown for the "no active session" holding message so it's only sent once per hour.
+_holding_sent: dict[str, float] = {}
+_HOLDING_COOLDOWN = 3600.0
 
 # ---------------------------------------------------------------------------
 # Attachment / content-type helpers
@@ -214,6 +222,18 @@ async def handle_grandma_message(
         logger.debug("[handler] Ignoring group-chat message from %s", phone)
         return
 
+    # Serialize concurrent webhook events for the same phone so we never
+    # send two replies in parallel for back-to-back messages.
+    lock = _grandma_locks.setdefault(phone, asyncio.Lock())
+    async with lock:
+        await _handle_grandma_message_locked(phone, content, image_url)
+
+
+async def _handle_grandma_message_locked(
+    phone: str,
+    content: str,
+    image_url: str | None = None,
+) -> None:
     # ── a. Look up grandma ────────────────────────────────────────────────
     try:
         grandma = await asyncio.to_thread(db.get_grandma_by_phone, phone)
@@ -236,16 +256,21 @@ async def handle_grandma_message(
         logger.error("[handler] get_active_session failed: %s", exc)
         return
 
-    # ── c. No active session → holding message ────────────────────────────
+    # ── c. No active session → holding message (once per cooldown period) ──
     if session is None:
         logger.info("[handler] No active session for grandma_id=%s", grandma_id)
-        try:
-            await bb.send_text(
-                grandma_phone,
-                f"Hi {grandma_name}! I'll have something to share with you soon 💛",
-            )
-        except Exception as exc:
-            logger.error("[handler] send holding message failed: %s", exc)
+        now = time.time()
+        if now - _holding_sent.get(grandma_phone, 0) > _HOLDING_COOLDOWN:
+            _holding_sent[grandma_phone] = now
+            try:
+                await bb.send_text(
+                    grandma_phone,
+                    f"Hi {grandma_name}! I'll have something to share with you soon 💛",
+                )
+            except Exception as exc:
+                logger.error("[handler] send holding message failed: %s", exc)
+        else:
+            logger.debug("[handler] Skipping repeated holding message for %s", grandma_phone)
         return
 
     session_id: str = session["id"]
