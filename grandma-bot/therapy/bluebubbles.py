@@ -21,6 +21,31 @@ from .config import settings
 _TIMEOUT = httpx.Timeout(30.0)
 _RETRY_ERRORS = (httpx.TransportError, httpx.TimeoutException)
 
+# Send-level dedup: refuse to send the same text to the same phone twice within
+# this window. Catches echo loops, concurrent handler races, fallback-method
+# double-sends, and retry-after-success scenarios.
+_SEND_DEDUP_TTL = 120.0
+_recent_sends: dict[str, tuple[str, float]] = {}
+
+
+def _normalize(text: str) -> str:
+    """Normalize text for dedup: collapse whitespace, strip punctuation padding."""
+    return " ".join(text.split()).strip()
+
+
+def _is_duplicate_send(phone: str, text: str) -> bool:
+    """Return True if *text* was already sent to *phone* recently."""
+    now = time.time()
+    key = _normalize(text)
+    expired = [p for p, (_, t) in list(_recent_sends.items()) if now - t > _SEND_DEDUP_TTL]
+    for p in expired:
+        _recent_sends.pop(p, None)
+    recent = _recent_sends.get(phone)
+    if recent and recent[0] == key and now - recent[1] < _SEND_DEDUP_TTL:
+        return True
+    _recent_sends[phone] = (key, now)
+    return False
+
 
 def _chat_guid(phone: str) -> str:
     return f"iMessage;-;{phone}"
@@ -72,7 +97,10 @@ class BlueBubblesClient:
 
     async def send_text(self, phone: str, message: str) -> dict:
         """Send a text iMessage. Uses apple-script (private-api not required)."""
-        _root_bb._sent_texts[message.strip()] = time.time()  # register before sending so echo-dedup catches it
+        if _is_duplicate_send(phone, message):
+            print(f"[therapy.bb] DEDUP: dropping duplicate send to {phone}: {message[:60]!r}")
+            return {"status": "dedup_skipped"}
+        _root_bb._sent_texts[_root_bb._normalize(message)] = time.time()  # register before sending so echo-dedup catches it
         chat_guid = self._chat_guid(phone)
         try:
             r = await self._post_text(chat_guid, message, "apple-script")

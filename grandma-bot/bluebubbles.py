@@ -22,11 +22,34 @@ _image_client = httpx.Client(timeout=120.0, http2=False)
 _sent_texts: dict[str, float] = {}
 _SENT_TTL = 300.0
 
+# Per-phone send dedup: refuse to send the same text to the same phone twice
+# within this window. Catches echo loops, concurrent handler races, and
+# retry-after-success duplicates.
+_SEND_DEDUP_TTL = 120.0
+_recent_sends: dict[str, tuple[str, float]] = {}
+
+
+def _normalize(text: str) -> str:
+    return " ".join(text.split()).strip()
+
+
+def _is_duplicate_send(phone: str, text: str) -> bool:
+    now = time.time()
+    key = _normalize(text)
+    expired = [p for p, (_, t) in list(_recent_sends.items()) if now - t > _SEND_DEDUP_TTL]
+    for p in expired:
+        _recent_sends.pop(p, None)
+    recent = _recent_sends.get(phone)
+    if recent and recent[0] == key and now - recent[1] < _SEND_DEDUP_TTL:
+        return True
+    _recent_sends[phone] = (key, now)
+    return False
+
 
 def is_bot_echo(text: Optional[str]) -> bool:
     if not text:
         return False
-    key = text.strip()
+    key = _normalize(text)
     now = time.time()
     expired = [k for k, t in list(_sent_texts.items()) if now - t > _SENT_TTL]
     for k in expired:
@@ -108,7 +131,10 @@ def _send_text_with_method(chat_guid: str, message: str, method: str) -> httpx.R
 
 def send_text(phone: str, text: str) -> None:
     """Send an iMessage text. Uses apple-script (private-api not required)."""
-    _sent_texts[text.strip()] = time.time()  # register before sending
+    if _is_duplicate_send(phone, text):
+        print(f"[bluebubbles] DEDUP: dropping duplicate send to {phone}: {text[:60]!r}")
+        return
+    _sent_texts[_normalize(text)] = time.time()  # register before sending
     chat_guid = chat_guid_for(phone)
     try:
         r = _send_text_with_method(chat_guid, text, "apple-script")
