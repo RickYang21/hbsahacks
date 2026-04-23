@@ -10,7 +10,7 @@ from therapy.state_machine import SessionPhase
 # ---------------------------------------------------------------------------
 # System prompt
 # Placeholders filled at runtime:
-#   {grandma_name}      — e.g. "Eleanor"
+#   {grandma_name}      — e.g. "Margaret"
 #   {memory_summary}    — one-sentence AI summary of the photo
 #   {memory_tags}       — comma-separated tag strings
 #   {people}            — comma-separated names/relationships in the memory

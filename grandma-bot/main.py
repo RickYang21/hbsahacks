@@ -33,7 +33,7 @@ CLAUDE_MODEL = "claude-sonnet-4-5"
 MERGE_WINDOW_SECONDS = 60
 
 # NOTE: hardcoded single-grandma — matches seed in schema.sql.
-ELEANOR_ID = "11111111-1111-1111-1111-111111111111"
+MARGARET_ID = "11111111-1111-1111-1111-111111111111"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -421,4 +421,4 @@ def root():
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "grandma_id": ELEANOR_ID}
+    return {"ok": True, "grandma_id": MARGARET_ID}

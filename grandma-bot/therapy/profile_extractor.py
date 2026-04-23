@@ -152,7 +152,7 @@ no markdown, no explanations.
 
 Each element has exactly two keys:
   "fact"       — a simple, declarative sentence in third person that captures ONE \
-specific, personal detail about her (e.g. "Eleanor grew roses in her Pasadena garden")
+specific, personal detail about her (e.g. "Margaret grew roses in her Pasadena garden")
   "confidence" — a float from 0.0 to 1.0 reflecting how certain you are:
                    1.0 = explicit, direct statement
                    0.7 = strong implication from context

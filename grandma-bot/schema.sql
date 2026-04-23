@@ -62,9 +62,9 @@ create table session_alerts (
   created_at timestamptz default now()
 );
 
--- seed Eleanor + Sarah — REPLACE PHONES BEFORE DEMO
+-- seed Margaret + Sarah — REPLACE PHONES BEFORE DEMO
 insert into grandmas (id, name, phone) values
-  ('11111111-1111-1111-1111-111111111111', 'Eleanor', '+15550000001');
+  ('11111111-1111-1111-1111-111111111111', 'Margaret', '+15550000001');
 
 insert into family_members (grandma_id, name, phone) values
   ('11111111-1111-1111-1111-111111111111', 'Sarah', '+15550000002');

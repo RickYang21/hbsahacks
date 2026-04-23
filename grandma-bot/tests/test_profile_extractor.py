@@ -42,7 +42,7 @@ def make_memory(summary: str = "A birthday party in a garden") -> dict:
 
 def make_history() -> list[dict]:
     return [
-        {"role": "bot", "content": "Hi Eleanor! Do you remember this photo?"},
+        {"role": "bot", "content": "Hi Margaret! Do you remember this photo?"},
         {"role": "grandma", "content": "Oh yes, that was my garden in Pasadena!"},
     ]
 
@@ -90,35 +90,35 @@ class TestSignificantWords:
 class TestDeduplicateFacts:
     def test_no_existing_facts_keeps_everything(self):
         new = [
-            {"fact": "Eleanor grew roses in Pasadena", "confidence": 0.9},
+            {"fact": "Margaret grew roses in Pasadena", "confidence": 0.9},
             {"fact": "She loved baking apple pies", "confidence": 0.8},
         ]
         assert deduplicate_facts(new, []) == new
 
     def test_exact_overlap_removes_fact(self):
-        existing = ["Eleanor grew roses in Pasadena garden"]
-        new = [{"fact": "Eleanor grew roses Pasadena garden California", "confidence": 0.9}]
+        existing = ["Margaret grew roses in Pasadena garden"]
+        new = [{"fact": "Margaret grew roses Pasadena garden California", "confidence": 0.9}]
         # "eleanor", "grew", "roses", "pasadena", "garden" → 5 shared words → dup
         result = deduplicate_facts(new, existing)
         assert result == []
 
     def test_partial_overlap_below_threshold_keeps_fact(self):
-        existing = ["Eleanor has a daughter named Susan"]
+        existing = ["Margaret has a daughter named Susan"]
         # Only 1 shared significant word ("eleanor") — below OVERLAP_THRESHOLD
-        new = [{"fact": "Eleanor visited Paris in 1962", "confidence": 0.9}]
+        new = [{"fact": "Margaret visited Paris in 1962", "confidence": 0.9}]
         result = deduplicate_facts(new, existing)
         assert len(result) == 1
 
     def test_keeps_unrelated_fact(self):
-        existing = ["Eleanor grew roses in her Pasadena garden"]
+        existing = ["Margaret grew roses in her Pasadena garden"]
         new = [{"fact": "She loved baking apple pies on Sundays", "confidence": 0.8}]
         result = deduplicate_facts(new, existing)
         assert len(result) == 1
 
     def test_multiple_new_facts_partial_dedup(self):
-        existing = ["Eleanor grew roses in Pasadena garden"]
+        existing = ["Margaret grew roses in Pasadena garden"]
         new = [
-            {"fact": "Eleanor grew roses Pasadena California garden", "confidence": 0.9},  # dup
+            {"fact": "Margaret grew roses Pasadena California garden", "confidence": 0.9},  # dup
             {"fact": "She baked pies every Sunday morning", "confidence": 0.8},            # keep
         ]
         result = deduplicate_facts(new, existing)
@@ -132,7 +132,7 @@ class TestDeduplicateFacts:
         # Build exactly OVERLAP_THRESHOLD shared significant words
         shared = ["apple", "orange", "banana"][:_OVERLAP_THRESHOLD]
         existing_fact = "She loved " + " ".join(shared) + " fruit"
-        new_fact = "Eleanor enjoyed " + " ".join(shared) + " desserts"
+        new_fact = "Margaret enjoyed " + " ".join(shared) + " desserts"
         new = [{"fact": new_fact, "confidence": 0.9}]
         result = deduplicate_facts(new, [existing_fact])
         assert result == []  # exactly at threshold → removed
@@ -147,7 +147,7 @@ class TestExtractFacts:
     @pytest.mark.asyncio
     async def test_returns_valid_facts(self):
         payload = [
-            {"fact": "Eleanor grew roses in Pasadena", "confidence": 0.9},
+            {"fact": "Margaret grew roses in Pasadena", "confidence": 0.9},
             {"fact": "She had a daughter named Susan", "confidence": 0.7},
         ]
         with patch(
@@ -161,14 +161,14 @@ class TestExtractFacts:
                 existing_facts=[],
             )
         assert len(result) == 2
-        assert result[0]["fact"] == "Eleanor grew roses in Pasadena"
+        assert result[0]["fact"] == "Margaret grew roses in Pasadena"
         assert result[0]["confidence"] == 0.9
 
     @pytest.mark.asyncio
     async def test_filters_low_confidence(self):
         payload = [
             {"fact": "She might have liked swimming", "confidence": 0.3},   # below threshold
-            {"fact": "Eleanor had a dog named Max", "confidence": 0.8},
+            {"fact": "Margaret had a dog named Max", "confidence": 0.8},
         ]
         with patch(
             "therapy.profile_extractor._call_extraction",
@@ -185,7 +185,7 @@ class TestExtractFacts:
 
     @pytest.mark.asyncio
     async def test_exactly_at_min_confidence_kept(self):
-        payload = [{"fact": "Eleanor enjoyed gardening", "confidence": _MIN_CONFIDENCE}]
+        payload = [{"fact": "Margaret enjoyed gardening", "confidence": _MIN_CONFIDENCE}]
         with patch(
             "therapy.profile_extractor._call_extraction",
             new=AsyncMock(return_value=json.dumps(payload)),
@@ -195,10 +195,10 @@ class TestExtractFacts:
 
     @pytest.mark.asyncio
     async def test_deduplicates_against_existing(self):
-        existing = ["Eleanor grew roses in her Pasadena garden"]
+        existing = ["Margaret grew roses in her Pasadena garden"]
         payload = [
-            # will be removed by dedup (shares Eleanor, grew, roses, Pasadena, garden)
-            {"fact": "Eleanor grew roses Pasadena California garden", "confidence": 0.9},
+            # will be removed by dedup (shares Margaret, grew, roses, Pasadena, garden)
+            {"fact": "Margaret grew roses Pasadena California garden", "confidence": 0.9},
             # kept
             {"fact": "She had a brother named Robert", "confidence": 0.8},
         ]
@@ -226,7 +226,7 @@ class TestExtractFacts:
 
     @pytest.mark.asyncio
     async def test_handles_json_wrapped_in_code_fence(self):
-        payload = [{"fact": "Eleanor worked as a nurse", "confidence": 0.9}]
+        payload = [{"fact": "Margaret worked as a nurse", "confidence": 0.9}]
         fenced = f"```json\n{json.dumps(payload)}\n```"
         with patch(
             "therapy.profile_extractor._call_extraction",
@@ -258,7 +258,7 @@ class TestExtractFacts:
 
     @pytest.mark.asyncio
     async def test_skips_non_dict_items(self):
-        payload = ["bad item", {"fact": "Eleanor loved cats", "confidence": 0.8}]
+        payload = ["bad item", {"fact": "Margaret loved cats", "confidence": 0.8}]
         with patch(
             "therapy.profile_extractor._call_extraction",
             new=AsyncMock(return_value=json.dumps(payload)),
@@ -279,14 +279,14 @@ class TestSaveExtractedFacts:
     @pytest.mark.asyncio
     async def test_calls_add_profile_fact_for_each(self):
         facts = [
-            {"fact": "Eleanor grew roses", "confidence": 0.9},
+            {"fact": "Margaret grew roses", "confidence": 0.9},
             {"fact": "She loved baking", "confidence": 0.7},
         ]
         mock_add = MagicMock()
         with patch("therapy.database.add_profile_fact", mock_add):
             await save_extracted_facts("gma-1", "sess-1", facts)
         assert mock_add.call_count == 2
-        mock_add.assert_any_call("gma-1", "Eleanor grew roses", "sess-1", 0.9)
+        mock_add.assert_any_call("gma-1", "Margaret grew roses", "sess-1", 0.9)
         mock_add.assert_any_call("gma-1", "She loved baking", "sess-1", 0.7)
 
     @pytest.mark.asyncio
@@ -299,7 +299,7 @@ class TestSaveExtractedFacts:
     @pytest.mark.asyncio
     async def test_continues_after_individual_error(self):
         facts = [
-            {"fact": "Eleanor grew roses", "confidence": 0.9},
+            {"fact": "Margaret grew roses", "confidence": 0.9},
             {"fact": "She loved baking", "confidence": 0.7},
         ]
         # First call raises, second succeeds
@@ -318,7 +318,7 @@ class TestSaveExtractedFacts:
 class TestExtractAndSave:
     @pytest.mark.asyncio
     async def test_orchestrates_extract_then_save(self):
-        facts = [{"fact": "Eleanor loved roses", "confidence": 0.9}]
+        facts = [{"fact": "Margaret loved roses", "confidence": 0.9}]
         with (
             patch(
                 "therapy.profile_extractor.extract_facts",
@@ -348,7 +348,7 @@ class TestExtractAndSave:
 
     @pytest.mark.asyncio
     async def test_passes_existing_facts_to_extract(self):
-        existing = ["Eleanor grew roses in Pasadena"]
+        existing = ["Margaret grew roses in Pasadena"]
         with (
             patch(
                 "therapy.profile_extractor.extract_facts",

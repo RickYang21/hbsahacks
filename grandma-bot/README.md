@@ -28,7 +28,7 @@ Family members text photos to a bot over iMessage. Claude extracts tags/summary/
 - `main.py` — FastAPI app: BlueBubbles webhook, family handler, grandma stub, dashboard API, session start.
 - `bluebubbles.py` — BlueBubbles REST client (`send_text`, `send_image`, `download_attachment`) + inbound payload parser.
 - `dashboard.html` — single-file Tailwind + vanilla JS dashboard (served at `/`, polls every 2s).
-- `schema.sql` — DB schema shared with Person B. Seeds Eleanor + Sarah.
+- `schema.sql` — DB schema shared with Person B. Seeds Margaret + Sarah.
 - `requirements.txt`, `.env.example`, `.gitignore`.
 
 ## Contract with Person B

@@ -6,7 +6,7 @@ Used by the reminiscence therapy session handler (Person B).
 # ---------------------------------------------------------------------------
 # System prompt — inject before every Claude API call in a session.
 # Placeholders (filled at runtime):
-#   {grandma_name}      — e.g. "Eleanor"
+#   {grandma_name}      — e.g. "Margaret"
 #   {memory_summary}    — short paragraph describing the photo/memory
 #   {memory_tags}       — comma-separated tags, e.g. "garden, 1987, roses"
 #   {memory_people}     — comma-separated names visible/mentioned in memory
@@ -77,7 +77,7 @@ Respond only with {grandma_name}'s next message. No narration, no labels, no quo
 # Opener variants — Greet & Anchor phase, Turn 1.
 # Randomly select one so {grandma_name} hears variety across sessions.
 # Placeholders:
-#   {grandma_name}    — e.g. "Eleanor"
+#   {grandma_name}    — e.g. "Margaret"
 #   {memory_context}  — one-sentence description of the photo/memory
 #   {photo}           — inline reference to the photo (or omit if text-only memory)
 # ---------------------------------------------------------------------------

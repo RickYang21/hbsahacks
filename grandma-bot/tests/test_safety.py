@@ -286,18 +286,18 @@ class TestRepeatedStoryDetection:
 
 class TestMakeLowSignalReply:
     def test_contains_grandma_name(self):
-        reply = _make_low_signal_reply("Eleanor", SessionPhase.EXPAND)
+        reply = _make_low_signal_reply("Margaret", SessionPhase.EXPAND)
         # Some acknowledgments include the name
         assert isinstance(reply, str) and len(reply) > 0
 
     def test_expand_phase_includes_reengagement(self):
-        reply = _make_low_signal_reply("Eleanor", SessionPhase.EXPAND)
+        reply = _make_low_signal_reply("Margaret", SessionPhase.EXPAND)
         # Should be acknowledgment + re-engage question
         assert "?" in reply or len(reply) > 10
 
     def test_reflect_phase_no_reengagement(self):
         # REFLECT has no re-engage questions — returns ack only
-        reply = _make_low_signal_reply("Eleanor", SessionPhase.REFLECT)
+        reply = _make_low_signal_reply("Margaret", SessionPhase.REFLECT)
         assert isinstance(reply, str) and len(reply) > 0
 
 
@@ -307,7 +307,7 @@ class TestMakeLowSignalReply:
 
 
 def _mock_grandma():
-    return {"id": "gma-1", "name": "Eleanor", "phone": "+15550000001"}
+    return {"id": "gma-1", "name": "Margaret", "phone": "+15550000001"}
 
 
 def _mock_session():
