@@ -7,19 +7,12 @@ import uuid
 from typing import Optional
 
 import httpx
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
 import bluebubbles as _root_bb  # root client — used to share the echo-dedup registry
 
 from .config import settings
 
 _TIMEOUT = httpx.Timeout(30.0)
-_RETRY_ERRORS = (httpx.TransportError, httpx.TimeoutException)
 
 # Send-level dedup: refuse to send the same text to the same phone twice within
 # this window. Catches echo loops, concurrent handler races, fallback-method
@@ -78,13 +71,10 @@ class BlueBubblesClient:
     def _chat_guid(self, phone: str) -> str:
         return f"iMessage;-;{phone}"
 
-    @retry(
-        retry=retry_if_exception_type(_RETRY_ERRORS),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=8),
-        reraise=True,
-    )
     async def _post_text(self, chat_guid: str, message: str, method: str) -> httpx.Response:
+        # NOTE: no retries. Sending iMessages is NOT idempotent — a TimeoutException
+        # after BlueBubbles already delivered the message would cause duplicate sends
+        # on retry. If the HTTP call fails, we fail the send and log it.
         return await self._client.post(
             f"{self._base}/api/v1/message/text",
             params=self._params(),
@@ -131,13 +121,8 @@ class BlueBubblesClient:
             files = {"attachment": (name, img_bytes, "image/jpeg")}
             data = {"chatGuid": chat_guid, "name": name, "method": "private-api"}
 
-            @retry(
-                retry=retry_if_exception_type(_RETRY_ERRORS),
-                stop=stop_after_attempt(3),
-                wait=wait_exponential(multiplier=1, min=1, max=8),
-                reraise=True,
-            )
             async def _upload() -> httpx.Response:
+                # NOTE: no retries — attachment sends are not idempotent.
                 return await self._client.post(
                     f"{self._base}/api/v1/message/attachment",
                     params=self._params(),
