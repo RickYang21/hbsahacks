@@ -20,6 +20,8 @@ from supabase import create_client, Client
 
 import bluebubbles
 from bluebubbles import Inbound, parse_inbound
+from therapy.routes import router as therapy_router
+from therapy.scheduler import therapy_lifespan
 
 # ---------- config ----------
 SUPABASE_URL = os.environ["SUPABASE_URL"]
@@ -37,7 +39,9 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
 # ---------- app ----------
-app = FastAPI(title="Grandma Memory Bot")
+app = FastAPI(title="Grandma Memory Bot", lifespan=therapy_lifespan)
+
+app.include_router(therapy_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -197,10 +201,15 @@ def handle_family(family: dict, msg: Inbound) -> dict:
     return {"status": "ok", "saved_count": len(saved)}
 
 
-def handle_grandma(grandma: dict, msg: Inbound) -> dict:
-    # TODO: Person B implements here — reminiscence therapy conversation engine.
-    print(f"[grandma_handler stub] grandma_id={grandma['id']} text={msg.text!r}")
-    return {"status": "routed_to_grandma_handler", "grandma_id": grandma["id"]}
+async def handle_grandma(grandma: dict, msg: Inbound) -> dict:
+    """Route inbound grandma message to the therapy conversation engine."""
+    from therapy.handler import handle_grandma_message
+    await handle_grandma_message(
+        phone=grandma["phone"],
+        content=msg.text or "",
+        image_url=None,  # grandma-side attachments not expected; extend here if needed
+    )
+    return {"status": "handled", "grandma_id": grandma["id"]}
 
 
 # ---------- routes ----------
@@ -217,7 +226,7 @@ async def bluebubbles_webhook(request: Request):
 
     grandma = _lookup_grandma(msg.from_phone)
     if grandma:
-        return handle_grandma(grandma, msg)
+        return await handle_grandma(grandma, msg)
 
     print(f"[webhook] unknown sender {msg.from_phone} — ignoring")
     return {"status": "unknown_sender"}

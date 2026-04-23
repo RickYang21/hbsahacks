@@ -54,6 +54,14 @@ create table grandma_profile_facts (
   created_at timestamptz default now()
 );
 
+create table session_alerts (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid references sessions(id),
+  alert_type text not null,
+  grandma_message text,
+  created_at timestamptz default now()
+);
+
 -- seed Eleanor + Sarah — REPLACE PHONES BEFORE DEMO
 insert into grandmas (id, name, phone) values
   ('11111111-1111-1111-1111-111111111111', 'Eleanor', '+15550000001');
