@@ -112,12 +112,17 @@ def send_image(phone: str, image_url_or_path: str, caption: Optional[str] = None
 
     try:
         if image_url_or_path.startswith("http://") or image_url_or_path.startswith("https://"):
+            print(f"[bluebubbles] downloading image from {image_url_or_path[:80]}")
             img_bytes = _image_client.get(image_url_or_path).content
+            print(f"[bluebubbles] downloaded {len(img_bytes)} bytes")
             name = image_url_or_path.rsplit("/", 1)[-1].split("?")[0] or "memory.jpg"
         else:
             p = Path(image_url_or_path)
             img_bytes = p.read_bytes()
             name = p.name
+
+        if not name.lower().endswith((".jpg", ".jpeg", ".png", ".gif", ".heic")):
+            name = name + ".jpg"
 
         files = {"attachment": (name, img_bytes, "image/jpeg")}
         data = {
@@ -129,15 +134,17 @@ def send_image(phone: str, image_url_or_path: str, caption: Optional[str] = None
         if caption:
             data["message"] = caption
 
+        print(f"[bluebubbles] uploading attachment to BlueBubbles ({len(img_bytes)} bytes)")
         r = _image_client.post(url, params={"password": BLUEBUBBLES_PASSWORD}, data=data, files=files)
+        print(f"[bluebubbles] attachment response {r.status_code}: {r.text[:200]}")
         if r.status_code >= 400:
             data["method"] = "private-api"
             data["tempGuid"] = f"temp-{uuid.uuid4()}"
             r = _image_client.post(url, params={"password": BLUEBUBBLES_PASSWORD}, data=data, files=files)
+            print(f"[bluebubbles] attachment fallback response {r.status_code}: {r.text[:200]}")
         r.raise_for_status()
 
         if caption:
-            # NOTE: some BlueBubbles builds ignore the multipart `message` field — send as a follow-up.
             send_text(phone, caption)
     except Exception as e:
         print(f"[bluebubbles] send_image failed to {phone}: {e}")

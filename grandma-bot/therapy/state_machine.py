@@ -39,11 +39,11 @@ class PhaseThresholds:
     """Configurable turn limits.  *_min is the earliest a phase can end;
     *_max is the latest before we force-advance."""
 
-    expand_min: int = 2    # bot exchanges before EXPAND can end
-    expand_max: int = 3    # bot exchanges before EXPAND must end
-    deepen_min: int = 2
-    deepen_max: int = 3
-    max_total_turns: int = 10      # hard cap across entire session
+    expand_min: int = 1    # bot exchanges before EXPAND can end
+    expand_max: int = 2    # bot exchanges before EXPAND must end
+    deepen_min: int = 3    # spend more time on deep questions
+    deepen_max: int = 5
+    max_total_turns: int = 14      # hard cap across entire session
     timeout_minutes: int = 30      # minutes without a reply → auto-close
 
 

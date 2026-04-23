@@ -83,16 +83,25 @@ PHASE_INSTRUCTIONS: dict[SessionPhase, str] = {
     ),
     SessionPhase.EXPAND: (
         "You are exploring the memory together. "
-        "Ask one specific, concrete question about who, what, when, or where. "
+        "First warmly echo back the most interesting thing she just said in one short phrase. "
+        "Then ask one specific, concrete question about who, what, when, or where. "
         "Keep it light and curious — you are gathering the story, not quizzing her. "
-        "Examples: 'Who else was there that day?' or 'Where was this taken?'"
+        "Examples: 'Who else was there that day?' or 'Where was this taken?' "
+        "or 'What were you all doing right before this photo was taken?'"
     ),
     SessionPhase.DEEPEN: (
-        "You are moving into feelings and meaning. "
-        "Ask one question about how she felt, what she loved most, "
-        "or why this memory is special to her. "
-        "Examples: 'What do you love most about that time?' "
-        "or 'How did it feel to be there?'"
+        "You are now diving into the heart of this memory — feelings, meaning, and identity. "
+        "First warmly name the most vivid or touching detail she has shared so far. "
+        "Then ask exactly one deep, open-ended question that invites her to go further. "
+        "Rotate through these angles — pick whichever fits best given what she has already said:\n"
+        "  • Sensory: 'What do you remember about the smell / sound / feel of that place?'\n"
+        "  • Emotion: 'What feeling comes back to you most strongly when you think about that?'\n"
+        "  • Identity: 'What does that memory say about who you were back then?'\n"
+        "  • Relationship: 'What did that person mean to you at that time in your life?'\n"
+        "  • Longing: 'If you could go back to that moment for just one hour, what would you do?'\n"
+        "  • Wisdom: 'What did you learn about yourself from an experience like that?'\n"
+        "Never repeat a question angle already used in this session. "
+        "Go slowly — one rich exchange is worth more than three rushed ones."
     ),
     SessionPhase.REFLECT: (
         "It is time to close the session with warmth. "
